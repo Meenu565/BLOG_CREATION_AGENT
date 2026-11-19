@@ -13,7 +13,7 @@ const groqClient = axios.create({
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-export const callGroq = async (systemPrompt, userPrompt, model = 'llama-3.1-8b-instant', maxTokens = 1200) => {
+export const callGroq = async (systemPrompt, userPrompt, model = 'openai/gpt-oss-120b', maxTokens = 1200) => {
     if (!GROQ_API_KEY || GROQ_API_KEY === 'your_groq_key') {
         console.warn("Groq API Key is missing. Returning placeholder response.");
         return `[Placeholder response for prompt: ${userPrompt.substring(0, 50)}...]`;
@@ -22,11 +22,12 @@ export const callGroq = async (systemPrompt, userPrompt, model = 'llama-3.1-8b-i
     let retries = 0;
     const maxRetries = 3;
     let baseDelay = 30000; // 30 seconds
+    let currentModel = model;
 
     while (retries <= maxRetries) {
         try {
             const response = await groqClient.post('', {
-                model: model,
+                model: currentModel,
                 messages: [
                     { role: 'system', content: systemPrompt },
                     { role: 'user', content: userPrompt }
@@ -37,6 +38,11 @@ export const callGroq = async (systemPrompt, userPrompt, model = 'llama-3.1-8b-i
             return response.data.choices[0].message.content;
         } catch (error) {
             const status = error.response?.status;
+            if (status === 404 && currentModel !== 'openai/gpt-oss-120b') {
+                console.warn(`Model "${currentModel}" not found (404). Falling back to "openai/gpt-oss-120b"...`);
+                currentModel = 'openai/gpt-oss-120b';
+                continue;
+            }
             if (status === 429 && retries < maxRetries) {
                 console.warn(`Groq Rate limit (429) reached. Retrying in ${baseDelay / 1000}s... (Attempt ${retries + 1}/${maxRetries})`);
                 await sleep(baseDelay);

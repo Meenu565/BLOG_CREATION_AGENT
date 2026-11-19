@@ -4,6 +4,7 @@ import Navigation from './components/Navigation';
 
 const Home = lazy(() => import('./pages/Home'));
 const BlogGeneratorPage = lazy(() => import('./pages/BlogGeneratorPage'));
+const ZuntraBlogsPage = lazy(() => import('./pages/ZuntraBlogsPage'));
 const BlogEditorPage = lazy(() => import('./pages/BlogEditorPage'));
 const DraftsPage = lazy(() => import('./pages/DraftsPage'));
 const BlogDetailPage = lazy(() => import('./pages/BlogDetailPage'));
@@ -22,6 +23,7 @@ function App() {
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/generator" element={<BlogGeneratorPage />} />
+              <Route path="/zuntra-blogs" element={<ZuntraBlogsPage />} />
               <Route path="/editor/:id" element={<BlogEditorPage />} />
               <Route path="/drafts" element={<DraftsPage />} />
               <Route path="/blog/:id" element={<BlogDetailPage />} />

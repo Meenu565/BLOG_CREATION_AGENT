@@ -15,6 +15,9 @@ import { Link } from 'react-router-dom';
 import { marked } from 'marked';
 import { getCategories, addCategory } from '../services/categoryService';
 import EmojiPicker from 'emoji-picker-react';
+import TopicCategorySection from '../components/blog-generator/TopicCategorySection';
+import ContentSettingsSection from '../components/blog-generator/ContentSettingsSection';
+import SEOContentSection from '../components/blog-generator/SEOContentSection';
 
 export default function BlogGeneratorPage() {
     const navigate = useNavigate();
@@ -382,118 +385,42 @@ export default function BlogGeneratorPage() {
     return (
         <div className="max-w-6xl mx-auto py-10 px-4">
             {!loading && generatedBlogs.length === 0 && !bulkResult && (
-                <Card className="max-w-3xl mx-auto">
-                    <CardHeader>
-                        <CardTitle className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 inline-block text-transparent bg-clip-text">Configure Blog</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <form onSubmit={handleGenerate} className="space-y-6">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2 col-span-2 sm:col-span-1">
-                                    <Label htmlFor="topic">Topic <span className="text-gray-400 text-xs font-normal">(leave empty for auto-bulk)</span></Label>
-                                    <Input id="topic" name="topic" placeholder="e.g. Future of AI — or leave empty for bulk mode" value={formData.topic} onChange={handleChange} />
-                                </div>
-                                <div className="space-y-2 col-span-2 sm:col-span-1">
-                                    <div className="flex justify-between items-center">
-                                        <Label htmlFor="category">Category</Label>
-                                        <button
-                                            type="button"
-                                            onClick={() => setIsAddCategoryOpen(true)}
-                                            className="text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors flex items-center gap-1"
-                                        >
-                                            + Add Category
-                                        </button>
-                                    </div>
-                                    <select id="category" name="category" required className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background" value={formData.category} onChange={handleChange}>
-                                        <option value="" disabled>Select a Category...</option>
-                                        {Object.entries(groupedCategories).map(([group, cats]) => (
-                                            <optgroup key={group} label={group}>
-                                                {cats.map(cat => {
-                                                    const val = formatCategoryValue(cat);
-                                                    return (
-                                                        <option key={cat.id || cat.category_name} value={val}>
-                                                            {cat.icon ? `${cat.icon} ` : ''}{cat.category_name}
-                                                        </option>
-                                                    );
-                                                })}
-                                            </optgroup>
-                                        ))}
-                                    </select>
-                                </div>
-                            </div>
+                <div className="max-w-3xl mx-auto space-y-6 animate-in fade-in duration-300">
+                    <div className="text-center space-y-2 mb-2">
+                        <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-blue-600 to-purple-600 inline-block text-transparent bg-clip-text">
+                            Configure Blog
+                        </h1>
+                        <p className="text-gray-500 text-sm max-w-md mx-auto">
+                            Setup your options across three independent configurations to generate optimized, ready-to-publish blog content.
+                        </p>
+                    </div>
 
-                            {isBulkMode && (
-                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
-                                    <strong>🚀 Bulk Mode Active:</strong> {formData.numBlogs} unique topic(s) will be auto-generated for <strong>{formData.category}</strong> and blogs will be created automatically.
-                                </div>
-                            )}
+                    <form onSubmit={handleGenerate} className="space-y-6">
+                        <TopicCategorySection
+                            formData={formData}
+                            handleChange={handleChange}
+                            groupedCategories={groupedCategories}
+                            isBulkMode={isBulkMode}
+                            setIsAddCategoryOpen={setIsAddCategoryOpen}
+                            formatCategoryValue={formatCategoryValue}
+                        />
 
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2 col-span-2 sm:col-span-1">
-                                    <Label htmlFor="numBlogs">Number of Blogs</Label>
-                                    <Input id="numBlogs" name="numBlogs" type="number" min="1" max="100" required value={formData.numBlogs} onChange={handleChange} />
-                                </div>
-                            </div>
+                        <ContentSettingsSection
+                            formData={formData}
+                            handleChange={handleChange}
+                        />
 
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                    <Label htmlFor="length">Blog Length</Label>
-                                    <select id="length" name="length" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background" value={formData.length} onChange={handleChange}>
-                                        <option value="short">Short (~500 words)</option>
-                                        <option value="medium">Medium (~1000 words)</option>
-                                        <option value="long">Long (~2000+ words)</option>
-                                    </select>
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="tone">Tone</Label>
-                                    <select id="tone" name="tone" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background" value={formData.tone} onChange={handleChange}>
-                                        <option value="professional">Professional</option>
-                                        <option value="conversational">Conversational</option>
-                                        <option value="humorous">Humorous</option>
-                                        <option value="academic">Academic</option>
-                                    </select>
-                                </div>
-                            </div>
+                        <SEOContentSection
+                            formData={formData}
+                            handleChange={handleChange}
+                            handleCheckboxChange={handleCheckboxChange}
+                        />
 
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                    <Label htmlFor="audience">Target Audience</Label>
-                                    <Input id="audience" name="audience" placeholder="e.g. Beginners, Doctors" value={formData.audience} onChange={handleChange} />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="seoLevel">SEO Level</Label>
-                                    <select id="seoLevel" name="seoLevel" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background" value={formData.seoLevel} onChange={handleChange}>
-                                        <option value="high">High</option>
-                                        <option value="medium">Medium</option>
-                                        <option value="basic">Basic</option>
-                                    </select>
-                                </div>
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label>Content Elements</Label>
-                                <div className="flex gap-4">
-                                    <label className="flex items-center space-x-2">
-                                        <input type="checkbox" name="faq" checked={formData.contentElements.faq} onChange={handleCheckboxChange} className="rounded border-gray-300" />
-                                        <span>FAQ Section</span>
-                                    </label>
-                                    <label className="flex items-center space-x-2">
-                                        <input type="checkbox" name="cta" checked={formData.contentElements.cta} onChange={handleCheckboxChange} className="rounded border-gray-300" />
-                                        <span>Call To Action</span>
-                                    </label>
-                                    <label className="flex items-center space-x-2">
-                                        <input type="checkbox" name="keyTakeaways" checked={formData.contentElements.keyTakeaways} onChange={handleCheckboxChange} className="rounded border-gray-300" />
-                                        <span>Key Takeaways</span>
-                                    </label>
-                                </div>
-                            </div>
-
-                            <Button type="submit" className="w-full text-lg shadow-md" size="lg" disabled={!formData.category}>
-                                {isBulkMode ? `🚀 Bulk Generate ${formData.numBlogs} Blog(s)` : 'Generate Blog(s)'}
-                            </Button>
-                        </form>
-                    </CardContent>
-                </Card>
+                        <Button type="submit" className="w-full text-lg shadow-md py-6 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white transition-all font-semibold" size="lg" disabled={!formData.category}>
+                            {isBulkMode ? `🚀 Bulk Generate ${formData.numBlogs} Blog(s)` : 'Generate Blog(s)'}
+                        </Button>
+                    </form>
+                </div>
             )}
 
             {loading && (

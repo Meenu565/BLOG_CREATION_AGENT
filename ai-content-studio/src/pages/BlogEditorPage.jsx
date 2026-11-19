@@ -22,6 +22,18 @@ export default function BlogEditorPage() {
     const [scheduleDate, setScheduleDate] = useState('');
     const [publishPlatform, setPublishPlatform] = useState('wordpress');
 
+    // Substack integration states
+    const [publishing, setPublishing] = useState(false);
+    const [publishProgress, setPublishProgress] = useState([]);
+    const [publishError, setPublishError] = useState(null);
+    const [publishUrl, setPublishUrl] = useState(null);
+    const [substackCookie, setSubstackCookie] = useState('');
+
+    useEffect(() => {
+        const savedCookie = localStorage.getItem('substack_cookie') || '';
+        setSubstackCookie(savedCookie);
+    }, []);
+
     useEffect(() => {
         if (id && id !== 'new') {
             fetchBlog(id);
@@ -116,7 +128,140 @@ export default function BlogEditorPage() {
         }
     };
 
+    const handleSubstackPublish = async () => {
+        setPublishProgress(['Initiating connection to publisher...']);
+        setPublishing(true);
+        setPublishError(null);
+        setPublishUrl(null);
+
+        // Save cookie to localStorage if provided
+        if (substackCookie.trim()) {
+            localStorage.setItem('substack_cookie', substackCookie.trim());
+        }
+
+        try {
+            const response = await fetch('/api/publish/substack', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ title, content, cookie: substackCookie }),
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to initialize publishing: ${response.statusText}`);
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let buffer = '';
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop(); // Keep partial line in buffer
+
+                for (const line of lines) {
+                    if (line.trim()) {
+                        try {
+                            const message = JSON.parse(line);
+                            if (message.type === 'status') {
+                                let statusText = '';
+                                switch (message.status) {
+                                    case 'INIT_SESSION':
+                                        statusText = 'Checking Substack session...';
+                                        break;
+                                    case 'AUTH_SUCCESS':
+                                        statusText = 'Session authenticated successfully.';
+                                        break;
+                                    case 'SESSION_EXPIRED':
+                                        statusText = 'Session expired. Manual sign-in required.';
+                                        break;
+                                    case 'NO_SESSION':
+                                        statusText = 'No session found. Manual sign-in required.';
+                                        break;
+                                    case 'AWAITING_LOGIN':
+                                        statusText = '⚠️ Manual Login Required: Please sign in to Substack in the browser window that just opened.';
+                                        break;
+                                    case 'LOGIN_SUCCESS':
+                                        statusText = 'Logged in successfully! Saving session...';
+                                        break;
+                                    case 'NAVIGATING_EDITOR':
+                                        statusText = 'Navigating to post editor...';
+                                        break;
+                                    case 'PREPARING_POST':
+                                        statusText = 'Entering title and writing content...';
+                                        break;
+                                    case 'PUBLISHING':
+                                        statusText = 'Clicking publish...';
+                                        break;
+                                    case 'CONFIRMING_PUBLISH':
+                                        statusText = 'Sending post to audience...';
+                                        break;
+                                    case 'FINALIZING':
+                                        statusText = 'Finalizing publication...';
+                                        break;
+                                    case 'PUBLISH_COMPLETE':
+                                        statusText = 'Published successfully!';
+                                        break;
+                                    default:
+                                        statusText = message.details || message.status;
+                                }
+                                setPublishProgress(prev => [...prev, statusText]);
+                            } else if (message.type === 'success') {
+                                setPublishUrl(message.url);
+                                setPublishProgress(prev => [...prev, 'Publication completed! Saving record...']);
+
+                                // Save to database (try schema-native URL column first, fallback to serialized platform name)
+                                try {
+                                    const { error: insertError } = await supabase.from('published_posts').insert([{
+                                        blog_id: id !== 'new' ? id : null,
+                                        platform: 'substack',
+                                        url: message.url
+                                    }]);
+
+                                    if (insertError) {
+                                        await supabase.from('published_posts').insert([{
+                                            blog_id: id !== 'new' ? id : null,
+                                            platform: `substack|${message.url}`
+                                        }]);
+                                    }
+                                } catch (dbErr) {
+                                    await supabase.from('published_posts').insert([{
+                                        blog_id: id !== 'new' ? id : null,
+                                        platform: `substack|${message.url}`
+                                    }]);
+                                }
+
+                                if (id && id !== 'new') {
+                                    await supabase.from('blogs').update({ status: 'published' }).eq('id', id);
+                                }
+                            } else if (message.type === 'error') {
+                                throw new Error(message.error);
+                            }
+                        } catch (e) {
+                            console.error('Error parsing stream line:', e, line);
+                        }
+                    }
+                }
+            }
+        } catch (err) {
+            setPublishError(err.message);
+            setPublishProgress(prev => [...prev, `❌ Error: ${err.message}`]);
+        } finally {
+            setPublishing(false);
+        }
+    };
+
     const handlePublish = async () => {
+        if (publishPlatform === 'substack') {
+            await handleSubstackPublish();
+            return;
+        }
+
         try {
             if (id && id !== 'new') {
                 await supabase.from('published_posts').insert([{
@@ -267,9 +412,28 @@ export default function BlogEditorPage() {
                             <option value="devto">Dev.to</option>
                             <option value="shopify">Shopify</option>
                             <option value="notion">Notion</option>
+                            <option value="substack">Substack</option>
                         </select>
 
-                        <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white" onClick={handlePublish}>
+                        {publishPlatform === 'substack' && (
+                            <div className="space-y-2 border-t pt-3 mt-1">
+                                <label className="text-xs font-semibold text-orange-600 block">
+                                    Substack Session Cookie (substack.sid) - Optional fallback
+                                </label>
+                                <Input
+                                    type="password"
+                                    value={substackCookie}
+                                    onChange={(e) => setSubstackCookie(e.target.value)}
+                                    placeholder="Paste your substack.sid cookie here"
+                                    className="h-9 text-xs"
+                                />
+                                <div className="text-[10px] text-gray-500 leading-normal">
+                                    <strong>How to get it:</strong> Sign in to Substack.com in your browser. Open DevTools (F12) &gt; Storage/Application &gt; Cookies &gt; substack.com &gt; Copy the value of <code>substack.sid</code>.
+                                </div>
+                            </div>
+                        )}
+
+                        <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white mt-2" onClick={handlePublish}>
                             <Send className="mr-2 h-4 w-4" /> Publish Now
                         </Button>
 
@@ -287,6 +451,66 @@ export default function BlogEditorPage() {
                     </CardContent>
                 </Card>
             </div>
+
+            {publishing && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <Card className="w-full max-w-lg shadow-2xl bg-white border border-gray-100">
+                        <CardHeader className="pb-4">
+                            <CardTitle className="text-xl font-bold bg-gradient-to-r from-orange-500 to-orange-700 inline-block text-transparent bg-clip-text flex items-center gap-2">
+                                <Send className="h-5 w-5 animate-pulse text-orange-600" />
+                                Publishing to Substack
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <div className="flex items-center justify-center py-6">
+                                <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-orange-500"></div>
+                            </div>
+                            <div className="bg-gray-50 border rounded-lg p-4 max-h-60 overflow-y-auto font-mono text-xs space-y-2">
+                                {publishProgress.map((step, idx) => (
+                                    <div key={idx} className={idx === publishProgress.length - 1 ? "text-orange-600 font-semibold animate-pulse" : "text-gray-500"}>
+                                        &gt; {step}
+                                    </div>
+                                ))}
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+            )}
+
+            {(publishUrl || publishError) && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <Card className="w-full max-w-md shadow-2xl bg-white border border-gray-100 animate-in zoom-in-95 duration-200">
+                        <CardHeader className="pb-4">
+                            <CardTitle className="text-xl font-bold">
+                                {publishUrl ? '🎉 Post Published!' : '❌ Publishing Failed'}
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            {publishUrl ? (
+                                <>
+                                    <p className="text-sm text-gray-600">
+                                        Your blog post has been successfully published to Substack!
+                                    </p>
+                                    <div className="bg-gray-50 border rounded-lg p-3 text-xs break-all text-blue-600 underline font-medium">
+                                        <a href={publishUrl} target="_blank" rel="noopener noreferrer">
+                                            {publishUrl}
+                                        </a>
+                                    </div>
+                                </>
+                            ) : (
+                                <p className="text-sm text-red-600 font-medium">
+                                    {publishError}
+                                </p>
+                            )}
+                            <div className="flex justify-end pt-2">
+                                <Button onClick={() => { setPublishUrl(null); setPublishError(null); }} className="bg-orange-600 hover:bg-orange-700 text-white">
+                                    Dismiss
+                                </Button>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+            )}
         </div>
     );
 }
